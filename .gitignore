@@ -1,0 +1,6 @@
+*DS_STORE
+.env
+key.txt
+config.yml
+set-cert.bat
+Gemfile.lock
