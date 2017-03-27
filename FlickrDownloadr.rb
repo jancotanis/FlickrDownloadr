@@ -198,6 +198,8 @@ end
 	
 	def download_photo info
 		# get destination location based on image data taken
+		
+		# movies does only return jpeg still , https://www.flickr.com/video_download.gne?id=33105463352
 		from = FlickRaw.url_o(info)
 		dest = get_directory(info) + "/" + image_name(info)
 		meta = dest + ".json"

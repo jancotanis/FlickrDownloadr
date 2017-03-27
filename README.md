@@ -15,6 +15,7 @@ If using Windows cmd, please set the "Use legacy console" under properties other
 
 
 ## Environment settings
+After getting the Flickr API key, set key and secret in your environment or the .env file. 
 ```
 FLICKR_KEY=123af132fdsa34sdf34shufd84332
 FLICKR_SECRET=dsf3247dsf83248
@@ -24,8 +25,12 @@ DOWNLOAD_DIR="c:/flickr/"
 ## Usage
 To download all files from 2017 run script with parameters
 
-`c:>ruby FlickrDownloadr 2017`
+```
+c:>ruby FlickrDownloadr 2017
+```
 
 Multiple years:
 
-`c:>ruby FlickrDownloadr 2016 2017`
+```
+c:>ruby FlickrDownloadr 2016 2017
+```
