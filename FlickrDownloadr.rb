@@ -8,9 +8,9 @@ require "logger"
 
 # json option
 class FlickRaw::Response
-  def to_json
-    to_hash #.to_json
-  end
+	def to_h
+		to_hash
+	end
 end
 
 	Dotenv.load
@@ -31,7 +31,6 @@ end
 			end
 			response
 		end
-		
 	end
 
   class FConfig
@@ -128,7 +127,7 @@ end
 		@user_id = flickr.test.login.id
 	end
 	
-	def download year, logger
+	def download_year year, logger
 		@year = year.to_s
 		@logger = logger
 		#Dir.mkdir(@to+@year) unless Dir.exists?(@to+@year)
@@ -178,9 +177,9 @@ end
 		end
 		directory
 	end
-	def image_name info
-		filename = info.title + "-" + info.id + "." + info.originalformat
-		# satinize the name based on title
+
+	def sanitize filename 
+		# sanitize the name based on title
 		# Split the name when finding a period which is preceded by some
 		# character, and is followed by some character other than a period,
 		# if there is no following period that is followed by something
@@ -190,45 +189,66 @@ end
 		# We now have one or two parts (depending on whether we could find
 		# a suitable period). For each of these parts, replace any unwanted
 		# sequence of characters with an underscore
-		fn.map! { |s| s.gsub /[^a-z0-9\-]+/i, '_' }
+		fn.map! { |s| s.gsub /[^a-z0-9\-]+/i, '_' }       
+		#/ 
 
 		# Finally, join the parts with a period and return the result
 		fn.join '.'
 	end
-	
+
+	def image_name info
+		#title = "" == info.title ? info.dates.taken : info.title
+		title = info.title
+		filename = title + "-" + info.id + "." + info.originalformat
+		sanitize filename
+	end
+
+	def download from, dest
+		begin
+			# puts "From: #{from} To: #{dest}"
+			# i don't want  https cert problems
+			Retry.times(5) {
+				open(from.gsub("https:","http:")) {|f|
+					File.open(dest,"wb") do |file|
+						file.puts f.read
+					end
+				}
+			}
+		#rescue Errno::EINVAL => ex
+		rescue Exception => ex
+			puts ""
+			@logger.error "From: [#{from}] To: [#{dest}]"
+			@logger.error ex
+		end
+	end
+
 	def download_photo info
-		# get destination location based on image data taken
-		
-		# movies does only return jpeg still , https://www.flickr.com/video_download.gne?id=33105463352
+		# get destination location based on image data taken 
 		from = FlickRaw.url_o(info)
 		dest = get_directory(info) + "/" + image_name(info)
 		meta = dest + ".json"
 		if !File.exists? meta
 			File.open(meta,"wb") do |file|
-				file.puts info.to_json
+				file.puts info.to_h.to_json
 			end
 		end
 
 		if !File.exists? dest
-			begin
-				# puts "From: #{from} To: #{dest}"
-				# i don't want  https cert problems
-				Retry.times(5) {
-					open(from.gsub("https:","http:")) {|f|
-						File.open(dest,"wb") do |file|
-							file.puts f.read
-						end
-					}
-				}
-			#rescue Errno::EINVAL => ex
-			rescue Exception => ex
-				puts ""
-				@logger.error "From: [#{from}] To: [#{dest}]"
-				@logger.error ex
+			download from, dest
+		end
+		# if video
+		if info.media == "video"
+			sizes = nil
+			Retry.times(5) {
+				sizes = flickr.photos.getSizes :photo_id => info.id
+			}
+			original = (sizes.find {|s| s.label == 'Video Original' }).source
+			dest = dest.gsub( "." + info.originalformat, ".mp4" )
+			if !File.exists? dest
+				download original, dest
 			end
 		end
 	end
-
   end
 
 
@@ -245,6 +265,6 @@ ARGV.each do|a|
 	i = a.to_i
 	if i > 999 && i < 10000
 		logger = Logger.new File.new("flickr-downloadr-#{a}.log", "a+")
-		fd.download( i, logger ) 
+		fd.download_year( i, logger ) 
 	end
 end
