@@ -206,9 +206,8 @@ end
 	def download from, dest
 		begin
 			# puts "From: #{from} To: #{dest}"
-			# i don't want  https cert problems
 			Retry.times(5) {
-				open(from.gsub("https:","http:")) {|f|
+				open(from) {|f|
 					File.open(dest,"wb") do |file|
 						file.puts f.read
 					end
