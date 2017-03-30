@@ -197,8 +197,8 @@ end
 	end
 
 	def image_name info
-		#title = "" == info.title ? info.dates.taken : info.title
-		title = info.title
+		title = info.title.empty? ? info.dates.taken : info.title
+		#title = info.title
 		filename = title + "-" + info.id + "." + info.originalformat
 		sanitize filename
 	end
@@ -213,11 +213,12 @@ end
 					end
 				}
 			}
-		#rescue Errno::EINVAL => ex
+			true
 		rescue Exception => ex
 			puts ""
 			@logger.error "From: [#{from}] To: [#{dest}]"
 			@logger.error ex
+			false
 		end
 	end
 
@@ -233,7 +234,7 @@ end
 		end
 
 		if !File.exists? dest
-			download from, dest
+			download from.gsub("https:","http:"), dest
 		end
 		# if video
 		if info.media == "video"
@@ -244,7 +245,15 @@ end
 			original = (sizes.find {|s| s.label == 'Video Original' }).source
 			dest = dest.gsub( "." + info.originalformat, ".mp4" )
 			if !File.exists? dest
-				download original, dest
+				if !download(original, dest)
+					site = (sizes.find {|s| s.label == 'Site MP4' }).source
+					dest = dest.gsub( "." + info.originalformat, "-low.mp4" )
+					if download(site, dest)
+						msg =  "Alternative video downloaded #{site}"
+						puts msg
+						@logger.info msg
+					end
+				end
 			end
 		end
 	end
