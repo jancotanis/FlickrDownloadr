@@ -1,17 +1,9 @@
-require "yaml"
 require "dotenv"
 require "flickraw"
 require "open-uri"
 require "fileutils"
-require "json"
 require "logger"
-
-# json option
-class FlickRaw::Response
-	def to_h
-		to_hash
-	end
-end
+require "./flickrawconfig.rb"
 
 	Dotenv.load
 	FlickRaw.api_key=ENV["FLICKR_KEY"]
@@ -21,103 +13,24 @@ end
 		def self.times( n, &block )
 			begin
 				response = block.call
+			#rescue OpenURI::HTTPError => e
 			rescue => e
-				n -= 1
-				if n > 0
-					retry
-				else
+				if e.message == '404 Not Found'
+					# no retries needed
 					raise e
+				else
+					n -= 1
+					if n > 0
+						retry
+					else
+						raise e
+					end
 				end
 			end
 			response
 		end
 	end
 
-  class FConfig
-    CONFIG_FILENAME = "./config.yml"
-
-    def initialize
-      if File.exists?(CONFIG_FILENAME)
-        file = File.open(CONFIG_FILENAME, "r")
-        @config = YAML.load(file.read)
-
-        unless @config && @config[:access_token] && @config[:access_token_secret]
-          raise "Problem with config.yml. Please delete the file and try to connect again."
-        end
-
-        file.close
-      else
-        @config = {
-          :access_token => nil,
-          :access_token_secret => nil,
-        }
-      end
-    end
-
-    def connect
-      if load_config && username = get_username
-        puts "You already have the Flickr account '#{username}' connected."
-        puts "Do you want to connect a new account? [y/n]"
-        input = gets.chomp
-
-        return if input.match(/n/i)
-      end
-
-      authenticate
-    end
-
-    def load_config
-      return false unless @config[:access_token] && @config[:access_token_secret]
-
-      flickr.access_token = @config[:access_token]
-      flickr.access_secret = @config[:access_token_secret]
-
-      self
-    end
-
-    def get_username
-      begin
-        return flickr.test.login.username
-      rescue FlickRaw::OAuthClient::FailedResponse
-        return false
-      end
-    end
-
-    private
-
-    def authenticate
-      puts "Authenticating with Flickr ..."
-      token = flickr.get_request_token
-      #auth_url = flickr.get_authorize_url(token['oauth_token'], :perms => 'delete')
-      auth_url = flickr.get_authorize_url(token['oauth_token'])
-
-      puts "Open the following url in your browser and approve the application"
-      puts auth_url
-      puts "Then copy here the number given in the browser and press enter (cmd props legacy console):"
-      verify = gets.strip
-
-      begin
-        flickr.get_access_token(token['oauth_token'], token['oauth_token_secret'], verify)
-        login = flickr.test.login
-        puts "You are now authenticated as #{login.username} with token #{flickr.access_token} and secret #{flickr.access_secret}"
-      rescue FlickRaw::FailedResponse => e
-        puts "Authentication failed : #{e.msg}"
-        return
-      end
-
-      @config[:access_token] = flickr.access_token
-      @config[:access_token_secret] = flickr.access_secret
-
-      write_config
-    end
-
-    def write_config
-      file = File.open(CONFIG_FILENAME, "w")
-      file.puts(YAML.dump(@config))
-      file.close
-    end
-  end
-  
   class FlickrDownloadr
 	def initialize to
 		@per_page = 500
@@ -133,10 +46,12 @@ end
 		#Dir.mkdir(@to+@year) unless Dir.exists?(@to+@year)
 		mn = @year+'-01-01 00:00:00'
 		mx = @year+'-12-31 23:59:59'
-
+		count=0
 		page = 0
 		i = 0
 		list = nil
+		time_to_go = "??? secs to go"
+		start = Time.now
 		begin 
 			page += 1
 			Retry.times(5) {
@@ -147,11 +62,13 @@ end
 				list.each do |item|
 				    i += 1
 					progression = 100.0 * i.to_f / total.to_f
-					print "#{year} page #{page}, #{total} photos #{progression.round(1)}%... \r"
+					print "#{year} page #{page}, #{total} photos #{progression.round(1)}% #{time_to_go}... \r"
 					id     = item.id
 					secret = item.secret
 					info = flickr.photos.getInfo :photo_id => id, :secret => secret
+					info['exif'] = flickr.photos.getExif :photo_id => id, :secret => secret
 					download_photo info
+					time_to_go = "#{((Time.now - start) * (total.to_i - i) / i).round(0) } secs to go"
 				end
 			end
 		end while list.count == @per_page
@@ -229,14 +146,14 @@ end
 		meta = dest + ".json"
 		if !File.exists? meta
 			File.open(meta,"wb") do |file|
-				file.puts info.to_h.to_json
+				file.puts info.to_json
 			end
 		end
 
 		if !File.exists? dest
 			download from.gsub("https:","http:"), dest
 		end
-		# if video
+		
 		if info.media == "video"
 			sizes = nil
 			Retry.times(5) {
@@ -247,7 +164,7 @@ end
 			if !File.exists? dest
 				if !download(original, dest)
 					site = (sizes.find {|s| s.label == 'Site MP4' }).source
-					dest = dest.gsub( "." + info.originalformat, "-low.mp4" )
+					dest = dest.gsub( ".mp4", "-low.mp4" )
 					if download(site, dest)
 						msg =  "Alternative video downloaded #{site}"
 						puts msg
@@ -263,7 +180,7 @@ end
 DOWNLOAD = ENV["DOWNLOAD_DIR"]
 puts "FlickrDownloadr by year"
 print "Connecting ..."
-config = FConfig.new
+config = FlickrawConfig.new
 config.load_config
 config.connect unless config.get_username
 puts "Ok"
