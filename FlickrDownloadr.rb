@@ -8,6 +8,7 @@ require "./flickrawconfig.rb"
 	Dotenv.load
 	FlickRaw.api_key=ENV["FLICKR_KEY"]
 	FlickRaw.shared_secret=ENV["FLICKR_SECRET"]
+	HTTP404 = '404 Not Found'
 
 	class Retry
 		def self.times( n, &block )
@@ -15,7 +16,7 @@ require "./flickrawconfig.rb"
 				response = block.call
 			#rescue OpenURI::HTTPError => e
 			rescue => e
-				if e.message == '404 Not Found'
+				if e.message == HTTP404
 					# no retries needed
 					raise e
 				else
@@ -36,14 +37,48 @@ require "./flickrawconfig.rb"
 		@per_page = 500
 		@to = to
 		@to += "/" unless to[-1] == "/" || to[-1] == "\\" 
-		#Dir.mkdir(to) unless Dir.exists?(to)
 		@user_id = flickr.test.login.id
+		@set_ids = nil
 	end
 	
+	def download_set set, logger
+		@logger = logger
+		@set_ids ||= get_sets
+		id = @set_ids[set]
+		if id
+			puts "Downloading set [#{set}]/[#{id}]" 
+			count=0
+			page = 0
+			i = 0
+			list = nil
+			response = nil
+			time_to_go = "??? secs to go"
+			start = Time.now
+			begin 
+				page += 1
+				Retry.times(5) {
+					response  = flickr.photosets.getPhotos( :photoset_id => id,:user_id => @user_id, :per_page => @per_page, :page => page )
+					list = response.photo
+				}
+				total = response.total
+				download_list( list ) {
+					if (i != 0)
+						time_to_go = "#{((Time.now - start) * (total.to_i - i) / i).round(0)} secs to go"
+					end
+					i += 1
+					progression = 100.0 * i.to_f / total.to_f
+					print "#{set} page #{page}, #{total} photos #{progression.round(1)}% #{time_to_go}... \r"
+				}
+			end while list.count == @per_page
+			puts "#{year} #{page} pages, #{total} photos updated.         "
+		else
+			puts "Photoset [#{set}] not found"
+		end
+	end
+
 	def download_year year, logger
 		@year = year.to_s
 		@logger = logger
-		#Dir.mkdir(@to+@year) unless Dir.exists?(@to+@year)
 		mn = @year+'-01-01 00:00:00'
 		mx = @year+'-12-31 23:59:59'
 		count=0
@@ -56,26 +91,50 @@ require "./flickrawconfig.rb"
 			page += 1
 			Retry.times(5) {
 				list  = flickr.people.getPhotos( :user_id => @user_id,:min_taken_date => mn, :max_taken_date => mx, :per_page => @per_page, :page => page )
+				puts "List #{list.class}"
 			}
 			total = list.total
-			if list.count > 0
-				list.each do |item|
-				    i += 1
-					progression = 100.0 * i.to_f / total.to_f
-					print "#{year} page #{page}, #{total} photos #{progression.round(1)}% #{time_to_go}... \r"
-					id     = item.id
-					secret = item.secret
-					info = flickr.photos.getInfo :photo_id => id, :secret => secret
-					info['exif'] = flickr.photos.getExif :photo_id => id, :secret => secret
-					download_photo info
+			download_list( list ) {
+				if (i != 0)
 					time_to_go = "#{((Time.now - start) * (total.to_i - i) / i).round(0) } secs to go"
 				end
-			end
+				i += 1
+				progression = 100.0 * i.to_f / total.to_f
+				print "#{year} page #{page}, #{total} photos #{progression.round(1)}% #{time_to_go}... \r"
+			}
 		end while list.count == @per_page
 		puts "#{year} #{page} pages, #{total} photos updated.         "
 	end
-
+	
 	private 
+
+	def download_list( list, &progression )
+		list.each do |item|
+			progression.call
+			id     = item.id
+			secret = item.secret
+			info = flickr.photos.getInfo :photo_id => id, :secret => secret
+			info['exif'] = flickr.photos.getExif :photo_id => id, :secret => secret
+			download_photo info
+		end
+	end
+	
+	def get_sets
+		puts "Loading sets"
+		sets = {}
+		page = 0
+		list = nil
+		begin 
+			page += 1
+			Retry.times(5) {
+				list  = flickr.photosets.getList( :user_id => @user_id, :per_page => @per_page, :page => page )
+			}
+			list.each do |item|
+				sets[item.title] = item.id
+			end
+		end while list.count == @per_page
+		sets
+	end
 
 	def get_directory info
 		# default year wihtout month
@@ -89,7 +148,6 @@ require "./flickrawconfig.rb"
 		directory = @to+directory
 		if !Dir.exists?(directory)
 			puts "Creating #{directory}...     "
-			#Dir.mkdir(directory)
 			FileUtils::mkdir_p directory
 		end
 		directory
@@ -134,7 +192,7 @@ require "./flickrawconfig.rb"
 		rescue Exception => ex
 			puts ""
 			@logger.error "From: [#{from}] To: [#{dest}]"
-			@logger.error ex
+			@logger.error ex unless ex.message == HTTP404
 			false
 		end
 	end
@@ -161,10 +219,10 @@ require "./flickrawconfig.rb"
 			}
 			original = (sizes.find {|s| s.label == 'Video Original' }).source
 			dest = dest.gsub( "." + info.originalformat, ".mp4" )
-			if !File.exists? dest
+			dest_low = dest.gsub( ".mp4", "-low.mp4" )
+			if !( File.exists?( dest ) || File.exists?( dest_low ) )
 				if !download(original, dest)
 					site = (sizes.find {|s| s.label == 'Site MP4' }).source
-					dest = dest.gsub( ".mp4", "-low.mp4" )
 					if download(site, dest)
 						msg =  "Alternative video downloaded #{site}"
 						puts msg
@@ -178,7 +236,7 @@ require "./flickrawconfig.rb"
 
 
 DOWNLOAD = ENV["DOWNLOAD_DIR"]
-puts "FlickrDownloadr by year"
+puts "FlickrDownloadr year|set"
 print "Connecting ..."
 config = FlickrawConfig.new
 config.load_config
@@ -188,8 +246,10 @@ puts "Ok"
 fd = FlickrDownloadr.new( DOWNLOAD )
 ARGV.each do|a|
 	i = a.to_i
+	logger = Logger.new File.new("flickr-downloadr-#{a}.log", "a+")
 	if i > 999 && i < 10000
-		logger = Logger.new File.new("flickr-downloadr-#{a}.log", "a+")
 		fd.download_year( i, logger ) 
+	else
+		fd.download_set( a, logger ) 
 	end
 end
