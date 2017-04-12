@@ -19,18 +19,37 @@ After getting the Flickr API key, set key and secret in your environment or the 
 ```
 FLICKR_KEY=123af132fdsa34sdf34shufd84332
 FLICKR_SECRET=dsf3247dsf83248
-DOWNLOAD_DIR="c:/flickr/"
+DOWNLOAD_DIR=c:/flickr/
+BROWSER_DOWNLOAD_DIR=C:/Users/johndoe/Downloads
 ```
 
+## Features
+* Download all flickr photos by year or by set
+* Stored in a directory per year per month
+
+##Dependencies
+- The [JSON](http://flori.github.com/json/) gem - `gem install json`.
+- The [FlickRaw](https://github.com/hanklords/flickraw) gem - `gem install flickraw`
+- The [DotEnv](https://github.com/bkeepers/dotenv) gem - `gem install dotenv`
+
+
 ## Usage
-To download all files from 2017 run script with parameters
+To download all files from 2017 run script with parameters.
 
 ```
 c:>ruby FlickrDownloadr 2017
 ```
 
-Multiple years:
+Multiple years and/or set combined:
 
 ```
-c:>ruby FlickrDownloadr 2016 2017
+c:>ruby FlickrDownloadr 2016 2017 "Family photos" SetY
+```
+The flickr API has some issues to download the original movie files. If the original is not available, 
+the script will download a lower res version with a suffix "-low". There is a workaround to download 
+originals using the a browser which has loggedin in Flickr. Use the BrowserDownload script to load these files usign the default browser. 
+The script will try to download a file each 10 secs and at the end it moves all files to the correct directory.
+
+```
+c:>ruby BrowserDownload 2016 2017
 ```
