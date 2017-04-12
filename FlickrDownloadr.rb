@@ -5,6 +5,10 @@ require "fileutils"
 require "logger"
 require "./flickrawconfig.rb"
 
+PREVIEW_EXT = ".jpg"
+MOVIE_EXT = ".mp4"
+LQ_EXT = "-low.mp4"	
+
 	Dotenv.load
 	FlickRaw.api_key=ENV["FLICKR_KEY"]
 	FlickRaw.shared_secret=ENV["FLICKR_SECRET"]
@@ -70,7 +74,7 @@ require "./flickrawconfig.rb"
 					print "#{set} page #{page}, #{total} photos #{progression.round(1)}% #{time_to_go}... \r"
 				}
 			end while list.count == @per_page
-			puts "#{year} #{page} pages, #{total} photos updated.         "
+			puts "#{set} #{page} pages, #{total} photos updated.         "
 		else
 			puts "Photoset [#{set}] not found"
 		end
@@ -81,7 +85,7 @@ require "./flickrawconfig.rb"
 		@logger = logger
 		mn = @year+'-01-01 00:00:00'
 		mx = @year+'-12-31 23:59:59'
-		count=0
+		count = 0
 		page = 0
 		i = 0
 		list = nil
@@ -202,31 +206,37 @@ require "./flickrawconfig.rb"
 		from = FlickRaw.url_o(info)
 		dest = get_directory(info) + "/" + image_name(info)
 		meta = dest + ".json"
+		# save meta info
 		if !File.exists? meta
 			File.open(meta,"wb") do |file|
 				file.puts info.to_json
 			end
 		end
-
+		# download photo/video preview
 		if !File.exists? dest
 			download from.gsub("https:","http:"), dest
 		end
-		
+		# download video
 		if info.media == "video"
 			sizes = nil
 			Retry.times(5) {
 				sizes = flickr.photos.getSizes :photo_id => info.id
 			}
-			original = (sizes.find {|s| s.label == 'Video Original' }).source
-			dest = dest.gsub( "." + info.originalformat, ".mp4" )
-			dest_low = dest.gsub( ".mp4", "-low.mp4" )
-			if !( File.exists?( dest ) || File.exists?( dest_low ) )
-				if !download(original, dest)
-					site = (sizes.find {|s| s.label == 'Site MP4' }).source
-					if download(site, dest)
-						msg =  "Alternative video downloaded #{site}"
-						puts msg
-						@logger.info msg
+			# check for video file mp4/avi/... use preview as basename
+			mask = dest.gsub( "." + info.originalformat, ".???" )
+			movies = Dir.glob( mask ).reject { |p| File.extname( p ) == PREVIEW_EXT }
+			if movies.empty?
+				original = (sizes.find {|s| s.label == 'Video Original' }).source
+				dest = dest.gsub( "." + info.originalformat, MOVIE_EXT )
+				dest_low = dest.gsub( MOVIE_EXT, LQ_EXT )
+				if !( File.exists?( dest ) || File.exists?( dest_low ) )
+					if !download(original, dest)
+						site = (sizes.find {|s| s.label == 'Site MP4' }).source
+						if download(site, dest_low)
+							msg =  "Alternative video downloaded #{site}"
+							puts msg
+							@logger.info msg
+						end
 					end
 				end
 			end

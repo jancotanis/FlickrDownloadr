@@ -1,5 +1,6 @@
 *DS_STORE
 .env
+flickr
 key.txt
 config.yml
 set-cert.bat
