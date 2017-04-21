@@ -95,7 +95,6 @@ LQ_EXT = "-low.mp4"
 			page += 1
 			Retry.times(5) {
 				list  = flickr.people.getPhotos( :user_id => @user_id,:min_taken_date => mn, :max_taken_date => mx, :per_page => @per_page, :page => page )
-				puts "List #{list.class}"
 			}
 			total = list.total
 			download_list( list ) {
